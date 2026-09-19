@@ -1,0 +1,580 @@
+-- ============================================
+-- KIRITTO-HUB
+-- Para Delta Executor
+-- ============================================
+
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+-- ============================================
+-- VENTANA PRINCIPAL
+-- ============================================
+local Window = Rayfield:CreateWindow({
+    Name = "Kiritto-Hub | Delta",
+    LoadingTitle = "Kiritto-Hub",
+    LoadingSubtitle = "Cargando...",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "KirittoHub",
+        FileName = "config"
+    },
+    KeySystem = false
+})
+
+-- ============================================
+-- DETECCIÓN DE LOBBY VS PARTIDA
+-- ============================================
+local GAME_KEYWORDS = {"Map", "Game", "Arena", "Round", "Match", "Field", "Duel"}
+
+local function isInGame()
+    local char = player.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then
+        return false
+    end
+    for _, obj in pairs(workspace:GetChildren()) do
+        local name = obj.Name
+        for _, keyword in pairs(GAME_KEYWORDS) do
+            if string.find(name, keyword, 1, true) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local cachedInGame = true
+task.spawn(function()
+    while task.wait(1) do
+        cachedInGame = isInGame()
+    end
+end)
+
+-- ============================================
+-- PESTAÑA: PLAYER
+-- ============================================
+local PlayerTab = Window:CreateTab("Player", 4483362458)
+
+local noclipEnabled = false
+PlayerTab:CreateToggle({
+    Name = "Noclip",
+    CurrentValue = false,
+    Flag = "Noclip",
+    Callback = function(value) noclipEnabled = value end
+})
+
+RunService.Stepped:Connect(function()
+    if noclipEnabled then
+        local char = player.Character
+        if char then
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end
+end)
+
+local speedValue = 16
+PlayerTab:CreateSlider({
+    Name = "WalkSpeed",
+    Range = {16, 200},
+    Increment = 1,
+    Suffix = " studs",
+    CurrentValue = 16,
+    Flag = "Speed",
+    Callback = function(value)
+        speedValue = value
+        local char = player.Character
+        if char and char:FindFirstChild("Humanoid") then
+            char.Humanoid.WalkSpeed = value
+        end
+    end
+})
+
+local tpWalkEnabled = false
+local tpSpeed = 1
+PlayerTab:CreateToggle({
+    Name = "TP Walk",
+    CurrentValue = false,
+    Flag = "TPWalk",
+    Callback = function(value) tpWalkEnabled = value end
+})
+
+PlayerTab:CreateSlider({
+    Name = "TP Walk Speed",
+    Range = {1, 10},
+    Increment = 0.5,
+    CurrentValue = 1,
+    Flag = "TPWalkSpeed",
+    Callback = function(value) tpSpeed = value end
+})
+
+RunService.RenderStepped:Connect(function()
+    if tpWalkEnabled then
+        local char = player.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            local moveDir = char.Humanoid.MoveDirection
+            if moveDir.Magnitude > 0 then
+                char.HumanoidRootPart.CFrame = char.HumanoidRootPart.CFrame + moveDir * tpSpeed
+            end
+        end
+    end
+end)
+
+-- ============================================
+-- PESTAÑA: ESP
+-- ============================================
+local EspTab = Window:CreateTab("ESP", 4483362458)
+
+local espPlayersEnabled = false
+local espNpcEnabled = false
+local onlyInGame = true
+
+local espBoxColor = Color3.fromRGB(255, 255, 255)
+local espLineColor = Color3.fromRGB(255, 0, 0)
+local espNpcColor = Color3.fromRGB(0, 255, 0)
+
+local espDrawings = {}
+local npcDrawings = {}
+
+EspTab:CreateToggle({
+    Name = "ESP Players",
+    CurrentValue = false,
+    Flag = "EspPlayers",
+    Callback = function(value) espPlayersEnabled = value end
+})
+
+EspTab:CreateToggle({
+    Name = "ESP NPC",
+    CurrentValue = false,
+    Flag = "EspNpc",
+    Callback = function(value) espNpcEnabled = value end
+})
+
+EspTab:CreateToggle({
+    Name = "Solo marcar en partida",
+    CurrentValue = true,
+    Flag = "OnlyInGame",
+    Callback = function(value) onlyInGame = value end
+})
+
+EspTab:CreateColorPicker({
+    Name = "Color del Box (Players)",
+    Color = Color3.fromRGB(255, 255, 255),
+    Flag = "EspBoxColor",
+    Callback = function(color) espBoxColor = color end
+})
+
+EspTab:CreateColorPicker({
+    Name = "Color de la Línea (Players)",
+    Color = Color3.fromRGB(255, 0, 0),
+    Flag = "EspLineColor",
+    Callback = function(color) espLineColor = color end
+})
+
+EspTab:CreateColorPicker({
+    Name = "Color del NPC",
+    Color = Color3.fromRGB(0, 255, 0),
+    Flag = "EspNpcColor",
+    Callback = function(color) espNpcColor = color end
+})
+
+local function createESP(plr)
+    if plr == player then return end
+    local box = Drawing.new("Square")
+    box.Thickness = 1
+    box.Filled = false
+    box.Transparency = 1
+    local line = Drawing.new("Line")
+    line.Thickness = 1
+    line.Transparency = 1
+    espDrawings[plr] = {box = box, line = line}
+end
+
+local function removeESP(plr)
+    if espDrawings[plr] then
+        espDrawings[plr].box:Remove()
+        espDrawings[plr].line:Remove()
+        espDrawings[plr] = nil
+    end
+end
+
+for _, plr in pairs(Players:GetPlayers()) do createESP(plr) end
+Players.PlayerAdded:Connect(createESP)
+Players.PlayerRemoving:Connect(removeESP)
+
+local function isNPC(model)
+    if not model:IsA("Model") then return false end
+    if Players:GetPlayerFromCharacter(model) then return false end
+    local humanoid = model:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return false end
+    local head = model:FindFirstChild("Head")
+    if not head then return false end
+    return true
+end
+
+local function createNpcESP(npc)
+    local box = Drawing.new("Square")
+    box.Thickness = 1
+    box.Filled = false
+    box.Transparency = 1
+    npcDrawings[npc] = {box = box}
+end
+
+for _, obj in pairs(workspace:GetChildren()) do
+    if isNPC(obj) then createNpcESP(obj) end
+end
+
+workspace.ChildAdded:Connect(function(obj)
+    task.wait(0.5)
+    if isNPC(obj) then createNpcESP(obj) end
+end)
+
+RunService.RenderStepped:Connect(function()
+    local inGame = cachedInGame
+    
+    for plr, drawings in pairs(espDrawings) do
+        local shouldShow = espPlayersEnabled and plr.Character and (not onlyInGame or inGame)
+        if not shouldShow then
+            drawings.box.Visible = false
+            drawings.line.Visible = false
+            continue
+        end
+        
+        local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+        local head = plr.Character:FindFirstChild("Head")
+        local humanoid = plr.Character:FindFirstChildOfClass("Humanoid")
+        
+        if not hrp or not head or not humanoid or humanoid.Health <= 0 then
+            drawings.box.Visible = false
+            drawings.line.Visible = false
+            continue
+        end
+        
+        local headPos, headOnScreen = camera:WorldToViewportPoint(head.Position + Vector3.new(0, 1, 0))
+        local hrpPos, hrpOnScreen = camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
+        
+        if headOnScreen or hrpOnScreen then
+            local height = math.abs(headPos.Y - hrpPos.Y)
+            local width = height / 2
+            drawings.box.Size = Vector2.new(width, height)
+            drawings.box.Position = Vector2.new(headPos.X - width/2, headPos.Y)
+            drawings.box.Color = espBoxColor
+            drawings.box.Visible = true
+            drawings.line.From = Vector2.new(camera.ViewportSize.X/2, camera.ViewportSize.Y)
+            drawings.line.To = Vector2.new(headPos.X, headPos.Y)
+            drawings.line.Color = espLineColor
+            drawings.line.Visible = true
+        else
+            drawings.box.Visible = false
+            drawings.line.Visible = false
+        end
+    end
+    
+    for npc, drawings in pairs(npcDrawings) do
+        local shouldShow = espNpcEnabled and npc.Parent and (not onlyInGame or inGame)
+        if not shouldShow then
+            drawings.box.Visible = false
+            continue
+        end
+        
+        local head = npc:FindFirstChild("Head")
+        local humanoid = npc:FindFirstChildOfClass("Humanoid")
+        
+        if not head or not humanoid or humanoid.Health <= 0 then
+            drawings.box.Visible = false
+            continue
+        end
+        
+        local headPos, headOnScreen = camera:WorldToViewportPoint(head.Position + Vector3.new(0, 1, 0))
+        local hrpPos, hrpOnScreen = camera:WorldToViewportPoint(head.Position - Vector3.new(0, 3, 0))
+        
+        if headOnScreen or hrpOnScreen then
+            local height = math.abs(headPos.Y - hrpPos.Y)
+            local width = height / 2
+            drawings.box.Size = Vector2.new(width, height)
+            drawings.box.Position = Vector2.new(headPos.X - width/2, headPos.Y)
+            drawings.box.Color = espNpcColor
+            drawings.box.Visible = true
+        else
+            drawings.box.Visible = false
+        end
+    end
+end)
+
+-- ============================================
+-- PESTAÑA: DISPARO (REDIRIGIR BALAS)
+-- ============================================
+local AimTab = Window:CreateTab("Disparo", 4483362458)
+
+local silentAimEnabled = false
+local aimPart = "Head"
+local aimFOV = 300
+local aimTeamCheck = false
+local aimWallCheck = false
+local debugMode = false
+
+local cachedTarget = nil
+local cachedTargetPos = nil
+
+AimTab:CreateToggle({
+    Name = "Redirigir Balas al Enemigo",
+    CurrentValue = false,
+    Flag = "SilentAim",
+    Callback = function(value) silentAimEnabled = value end
+})
+
+AimTab:CreateDropdown({
+    Name = "Parte objetivo",
+    Options = {"Head", "Torso", "HumanoidRootPart", "UpperTorso", "LowerTorso"},
+    CurrentOption = {"Head"},
+    Flag = "AimPart",
+    Callback = function(option) aimPart = option[1] end
+})
+
+AimTab:CreateSlider({
+    Name = "FOV del Aim",
+    Range = {50, 800},
+    Increment = 10,
+    Suffix = " px",
+    CurrentValue = 300,
+    Flag = "AimFOV",
+    Callback = function(value) aimFOV = value end
+})
+
+AimTab:CreateToggle({
+    Name = "Team Check",
+    CurrentValue = false,
+    Flag = "AimTeam",
+    Callback = function(value) aimTeamCheck = value end
+})
+
+AimTab:CreateToggle({
+    Name = "Wall Check",
+    CurrentValue = false,
+    Flag = "AimWall",
+    Callback = function(value) aimWallCheck = value end
+})
+
+AimTab:CreateToggle({
+    Name = "Modo Debug",
+    CurrentValue = false,
+    Flag = "DebugMode",
+    Callback = function(value) debugMode = value end
+})
+
+-- ============================================
+-- CÁLCULO DEL TARGET (CADA FRAME)
+-- ============================================
+local function updateTarget()
+    if not silentAimEnabled then
+        cachedTarget = nil
+        cachedTargetPos = nil
+        return
+    end
+    
+    local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+    local myChar = player.Character
+    local closest = nil
+    local closestPos = nil
+    local shortestDist = aimFOV
+    
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr == player then continue end
+        local char = plr.Character
+        if not char then continue end
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then continue end
+        if aimTeamCheck and myChar and plr.Team == player.Team then continue end
+        
+        local targetPart = char:FindFirstChild(aimPart)
+                        or char:FindFirstChild("HumanoidRootPart")
+        if not targetPart then continue end
+        
+        local screenPos, onScreen = camera:WorldToViewportPoint(targetPart.Position)
+        if not onScreen then continue end
+        
+        local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+        if dist > shortestDist then continue end
+        
+        if aimWallCheck and myChar then
+            local myHead = myChar:FindFirstChild("Head")
+            if myHead then
+                local rayParams = RaycastParams.new()
+                rayParams.FilterType = Enum.RaycastFilterType.Exclude
+                rayParams.FilterDescendantsInstances = {myChar, char}
+                local result = workspace:Raycast(myHead.Position,
+                    targetPart.Position - myHead.Position, rayParams)
+                if result then continue end
+            end
+        end
+        
+        shortestDist = dist
+        closest = plr
+        closestPos = targetPart.Position
+    end
+    
+    cachedTarget = closest
+    cachedTargetPos = closestPos
+end
+
+RunService.RenderStepped:Connect(updateTarget)
+
+-- ============================================
+-- HOOK DEL MOUSE (REDIRIGE LA MIRA)
+-- ============================================
+local mouse = player:GetMouse()
+
+local oldIndex
+oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
+    if silentAimEnabled and cachedTargetPos then
+        if self == mouse and key == "UnitRay" then
+            local origin = camera.CFrame.Position
+            local direction = (cachedTargetPos - origin).Unit
+            return Ray.new(origin, direction)
+        end
+        
+        if self == mouse and key == "Hit" then
+            return CFrame.new(cachedTargetPos)
+        end
+        
+        if self == mouse and key == "Target" then
+            if cachedTarget and cachedTarget.Character then
+                return cachedTarget.Character
+            end
+        end
+    end
+    return oldIndex(self, key)
+end))
+
+-- ============================================
+-- HOOK DE ViewportPointToRay (POR SI EL ARMA LO USA)
+-- ============================================
+local oldViewportPointToRay = camera.ViewportPointToRay
+camera.ViewportPointToRay = newcclosure(function(self, x, y, ...)
+    if silentAimEnabled and cachedTargetPos then
+        local origin = self.CFrame.Position
+        local direction = (cachedTargetPos - origin).Unit
+        return Ray.new(origin, direction)
+    end
+    return oldViewportPointToRay(self, x, y, ...)
+end)
+
+-- Debug opcional
+if debugMode then
+    task.spawn(function()
+        while task.wait(1) do
+            if cachedTarget then
+                print("[Kiritto-Hub] Objetivo:", cachedTarget.Name)
+            end
+        end
+    end)
+end
+
+-- ============================================
+-- PESTAÑA: CONFIGURACIÓN
+-- ============================================
+local ConfigTab = Window:CreateTab("Config", 4483362458)
+
+ConfigTab:CreateButton({
+    Name = "Guardar Configuración",
+    Callback = function() Rayfield:SaveConfiguration() end
+})
+
+ConfigTab:CreateButton({
+    Name = "Cargar Configuración",
+    Callback = function() Rayfield:LoadConfiguration() end
+})
+
+ConfigTab:CreateSection("Auto-Execute")
+
+local autoExecPath = "kiritto_hub.lua"
+
+ConfigTab:CreateToggle({
+    Name = "Auto-Execute al inyectar",
+    CurrentValue = false,
+    Flag = "AutoExec",
+    Callback = function(value)
+        if value then
+            local success = pcall(function()
+                local scriptUrl = "https://raw.githubusercontent.com/TU_USUARIO/TU_REPO/main/kiritto_hub.lua"
+                local loader = 'loadstring(game:HttpGet("' .. scriptUrl .. '"))()'
+                writefile("autoexec/" .. autoExecPath, loader)
+            end)
+            Rayfield:Notify({
+                Title = "Kiritto-Hub",
+                Content = success and "Auto-Execute activado." or "Error: writefile no soportado.",
+                Duration = 5
+            })
+        else
+            pcall(function() delfile("autoexec/" .. autoExecPath) end)
+            Rayfield:Notify({
+                Title = "Kiritto-Hub",
+                Content = "Auto-Execute desactivado.",
+                Duration = 5
+            })
+        end
+    end
+})
+
+ConfigTab:CreateButton({
+    Name = "Guardar en Auto-Execute ahora",
+    Callback = function()
+        local success = pcall(function()
+            local scriptUrl = "https://raw.githubusercontent.com/TU_USUARIO/TU_REPO/main/kiritto_hub.lua"
+            local loader = 'loadstring(game:HttpGet("' .. scriptUrl .. '"))()'
+            writefile("autoexec/" .. autoExecPath, loader)
+        end)
+        Rayfield:Notify({
+            Title = "Kiritto-Hub",
+            Content = success and "Guardado en autoexec." or "Error al guardar.",
+            Duration = 5
+        })
+    end
+})
+
+ConfigTab:CreateButton({
+    Name = "Eliminar de Auto-Execute",
+    Callback = function()
+        pcall(function() delfile("autoexec/" .. autoExecPath) end)
+        Rayfield:Notify({
+            Title = "Kiritto-Hub",
+            Content = "Archivo eliminado de autoexec.",
+            Duration = 5
+        })
+    end
+})
+
+ConfigTab:CreateButton({
+    Name = "Server Hop",
+    Callback = function()
+        local TeleportService = game:GetService("TeleportService")
+        local HttpService = game:GetService("HttpService")
+        local placeId = game.PlaceId
+        local success, result = pcall(function()
+            return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100"))
+        end)
+        if success and result and result.data then
+            for _, server in pairs(result.data) do
+                if server.playing < server.maxPlayers and server.id ~= game.JobId then
+                    TeleportService:TeleportToPlaceInstance(placeId, server.id, player)
+                    break
+                end
+            end
+        end
+    end
+})
+
+-- ============================================
+-- NOTIFICACIÓN FINAL
+-- ============================================
+Rayfield:Notify({
+    Title = "Kiritto-Hub",
+    Content = "Hub cargado correctamente",
+    Duration = 5
+})
