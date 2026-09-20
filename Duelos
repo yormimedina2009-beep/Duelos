@@ -3,7 +3,7 @@
 -- Para Delta Executor
 -- ============================================
 
-local Rayfield = local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()'))()
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -79,7 +79,6 @@ RunService.Stepped:Connect(function()
     end
 end)
 
-local speedValue = 16
 PlayerTab:CreateSlider({
     Name = "WalkSpeed",
     Range = {16, 200},
@@ -88,7 +87,6 @@ PlayerTab:CreateSlider({
     CurrentValue = 16,
     Flag = "Speed",
     Callback = function(value)
-        speedValue = value
         local char = player.Character
         if char and char:FindFirstChild("Humanoid") then
             char.Humanoid.WalkSpeed = value
@@ -308,7 +306,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================
--- PESTAÑA: DISPARO (REDIRIGIR BALAS)
+-- PESTAÑA: DISPARO
 -- ============================================
 local AimTab = Window:CreateTab("Disparo", 4483362458)
 
@@ -369,7 +367,129 @@ AimTab:CreateToggle({
 })
 
 -- ============================================
--- CÁLCULO DEL TARGET (CADA FRAME)
+-- HITBOX EXPANDER
+-- ============================================
+AimTab:CreateSection("Hitbox Expander")
+
+local hitboxEnabled = false
+local hitboxSize = 15
+local hitboxTransparency = 0.7
+local hitboxColor = Color3.fromRGB(255, 0, 0)
+local originalSizes = {}
+
+AimTab:CreateToggle({
+    Name = "Hitbox Expander",
+    CurrentValue = false,
+    Flag = "HitboxExp",
+    Callback = function(value) hitboxEnabled = value end
+})
+
+AimTab:CreateSlider({
+    Name = "Tamaño del Hitbox",
+    Range = {5, 50},
+    Increment = 1,
+    Suffix = " studs",
+    CurrentValue = 15,
+    Flag = "HitboxSize",
+    Callback = function(value) hitboxSize = value end
+})
+
+AimTab:CreateSlider({
+    Name = "Transparencia del Hitbox",
+    Range = {0, 1},
+    Increment = 0.1,
+    CurrentValue = 0.7,
+    Flag = "HitboxTransp",
+    Callback = function(value) hitboxTransparency = value end
+})
+
+AimTab:CreateColorPicker({
+    Name = "Color del Hitbox",
+    Color = Color3.fromRGB(255, 0, 0),
+    Flag = "HitboxColor",
+    Callback = function(color) hitboxColor = color end
+})
+
+AimTab:CreateButton({
+    Name = "Aplicar cambios al Hitbox",
+    Callback = function()
+        for _, data in pairs(originalSizes) do
+            if data.part and data.part.Parent then
+                data.part.Size = data.size
+                data.part.Transparency = data.transparency
+                data.part.Color = data.color
+                data.part.Material = data.material
+            end
+        end
+        originalSizes = {}
+        Rayfield:Notify({Title = "Hitbox", Content = "Cambios aplicados.", Duration = 3})
+    end
+})
+
+local function updateHitboxes()
+    if not hitboxEnabled then
+        for _, data in pairs(originalSizes) do
+            if data.part and data.part.Parent then
+                data.part.Size = data.size
+                data.part.Transparency = data.transparency
+                data.part.Color = data.color
+                data.part.Material = data.material
+            end
+        end
+        originalSizes = {}
+        return
+    end
+    
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr == player then continue end
+        if aimTeamCheck and plr.Team == player.Team then continue end
+        
+        local char = plr.Character
+        if not char then continue end
+        
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local head = char:FindFirstChild("Head")
+        
+        if hrp then
+            if not originalSizes[hrp] then
+                originalSizes[hrp] = {
+                    part = hrp,
+                    size = hrp.Size,
+                    transparency = hrp.Transparency,
+                    color = hrp.Color,
+                    material = hrp.Material
+                }
+            end
+            hrp.Size = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
+            hrp.CanCollide = false
+            hrp.Transparency = hitboxTransparency
+            hrp.Color = hitboxColor
+            hrp.Material = Enum.Material.Neon
+        end
+        
+        if head then
+            if not originalSizes[head] then
+                originalSizes[head] = {
+                    part = head,
+                    size = head.Size,
+                    transparency = head.Transparency,
+                    color = head.Color,
+                    material = head.Material
+                }
+            end
+            head.Size = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
+            head.CanCollide = false
+            head.Transparency = hitboxTransparency
+            head.Color = hitboxColor
+            head.Material = Enum.Material.Neon
+        end
+    end
+end
+
+RunService.Stepped:Connect(updateHitboxes)
+
+-- ============================================
+-- CÁLCULO DEL TARGET
 -- ============================================
 local function updateTarget()
     if not silentAimEnabled then
@@ -426,7 +546,7 @@ end
 RunService.RenderStepped:Connect(updateTarget)
 
 -- ============================================
--- HOOK DEL MOUSE (REDIRIGE LA MIRA)
+-- HOOK DEL MOUSE
 -- ============================================
 local mouse = player:GetMouse()
 
@@ -453,19 +573,34 @@ oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
 end))
 
 -- ============================================
--- HOOK DE ViewportPointToRay (POR SI EL ARMA LO USA)
+-- HOOK DE ViewportPointToRay (compatible móvil)
 -- ============================================
 local oldViewportPointToRay = camera.ViewportPointToRay
-camera.ViewportPointToRay = newcclosure(function(self, x, y, ...)
-    if silentAimEnabled and cachedTargetPos then
-        local origin = self.CFrame.Position
-        local direction = (cachedTargetPos - origin).Unit
-        return Ray.new(origin, direction)
-    end
-    return oldViewportPointToRay(self, x, y, ...)
+local vpSuccess = pcall(function()
+    camera.ViewportPointToRay = newcclosure(function(self, x, y, ...)
+        if silentAimEnabled and cachedTargetPos then
+            local origin = self.CFrame.Position
+            local direction = (cachedTargetPos - origin).Unit
+            return Ray.new(origin, direction)
+        end
+        return oldViewportPointToRay(self, x, y, ...)
+    end)
 end)
 
--- Debug opcional
+if not vpSuccess then
+    pcall(function()
+        hookfunction(oldViewportPointToRay, newcclosure(function(self, x, y, ...)
+            if silentAimEnabled and cachedTargetPos then
+                local origin = self.CFrame.Position
+                local direction = (cachedTargetPos - origin).Unit
+                return Ray.new(origin, direction)
+            end
+            return oldViewportPointToRay(self, x, y, ...)
+        end))
+    end)
+end
+
+-- Debug
 if debugMode then
     task.spawn(function()
         while task.wait(1) do
@@ -494,6 +629,20 @@ ConfigTab:CreateButton({
 ConfigTab:CreateSection("Auto-Execute")
 
 local autoExecPath = "kiritto_hub.lua"
+local defaultUrl = "https://raw.githubusercontent.com/yormimedina2009-beep/Duelos/refs/heads/main/Duelos"
+
+ConfigTab:CreateInput({
+    Name = "URL raw del script",
+    PlaceholderText = defaultUrl,
+    RemoveTextAfterFocusLost = false,
+    Flag = "ScriptUrl",
+    Callback = function(text)
+        if text and text ~= "" then
+            _G.KirittoScriptUrl = text
+            Rayfield:Notify({Title = "Kiritto-Hub", Content = "URL guardada.", Duration = 3})
+        end
+    end
+})
 
 ConfigTab:CreateToggle({
     Name = "Auto-Execute al inyectar",
@@ -502,79 +651,6 @@ ConfigTab:CreateToggle({
     Callback = function(value)
         if value then
             local success = pcall(function()
-                local scriptUrl = "https://raw.githubusercontent.com/TU_USUARIO/TU_REPO/main/kiritto_hub.lua"
+                local scriptUrl = _G.KirittoScriptUrl or defaultUrl
                 local loader = 'loadstring(game:HttpGet("' .. scriptUrl .. '"))()'
                 writefile("autoexec/" .. autoExecPath, loader)
-            end)
-            Rayfield:Notify({
-                Title = "Kiritto-Hub",
-                Content = success and "Auto-Execute activado." or "Error: writefile no soportado.",
-                Duration = 5
-            })
-        else
-            pcall(function() delfile("autoexec/" .. autoExecPath) end)
-            Rayfield:Notify({
-                Title = "Kiritto-Hub",
-                Content = "Auto-Execute desactivado.",
-                Duration = 5
-            })
-        end
-    end
-})
-
-ConfigTab:CreateButton({
-    Name = "Guardar en Auto-Execute ahora",
-    Callback = function()
-        local success = pcall(function()
-            local scriptUrl = "https://raw.githubusercontent.com/TU_USUARIO/TU_REPO/main/kiritto_hub.lua"
-            local loader = 'loadstring(game:HttpGet("' .. scriptUrl .. '"))()'
-            writefile("autoexec/" .. autoExecPath, loader)
-        end)
-        Rayfield:Notify({
-            Title = "Kiritto-Hub",
-            Content = success and "Guardado en autoexec." or "Error al guardar.",
-            Duration = 5
-        })
-    end
-})
-
-ConfigTab:CreateButton({
-    Name = "Eliminar de Auto-Execute",
-    Callback = function()
-        pcall(function() delfile("autoexec/" .. autoExecPath) end)
-        Rayfield:Notify({
-            Title = "Kiritto-Hub",
-            Content = "Archivo eliminado de autoexec.",
-            Duration = 5
-        })
-    end
-})
-
-ConfigTab:CreateButton({
-    Name = "Server Hop",
-    Callback = function()
-        local TeleportService = game:GetService("TeleportService")
-        local HttpService = game:GetService("HttpService")
-        local placeId = game.PlaceId
-        local success, result = pcall(function()
-            return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100"))
-        end)
-        if success and result and result.data then
-            for _, server in pairs(result.data) do
-                if server.playing < server.maxPlayers and server.id ~= game.JobId then
-                    TeleportService:TeleportToPlaceInstance(placeId, server.id, player)
-                    break
-                end
-            end
-        end
-    end
-})
-
--- ============================================
--- NOTIFICACIÓN FINAL
--- ============================================
-Rayfield:Notify({
-    Title = "Kiritto-Hub",
-    Content = "Hub cargado correctamente",
-    Duration = 5
-})
